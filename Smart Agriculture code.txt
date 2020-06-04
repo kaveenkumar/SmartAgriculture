@@ -1,0 +1,92 @@
+#include "mbed.h"
+#include "TextLCD.h"
+
+AnalogIn sm1(p18);
+
+DigitalOut relay(p30);
+
+Serial GPRS(p9,p10);
+Serial pc(USBTX, USBRX); // tx, rx
+
+TextLCD lcd(p26, p25, p24, p23, p22, p21); // rs, e, d4, d5, d6, d7
+
+LocalFileSystem local("local");
+
+char  z=0x1A,e=0x22,c=0x0d; // ASCII equivalent of 0X22 is "(Double invited coma)
+char num[]="9535811293";    // Mobile phone number to which emergancy information has to be delivered
+
+int main() 
+{
+float a,m;
+int b=100,time=0;
+
+      while(1)
+      {
+        GPRS.baud(9600);
+        GPRS.printf("AT+CMGF=1\r\n");
+       
+        
+        //Sensor read and Callibrate
+        a=sm1.read();
+        m=(0.057*(a*1024))+25.072;
+        lcd.cls();
+        lcd.printf("Raw SM1=%0.3f",a); 
+        wait(5);
+        
+        //Local storage (On board flash memory of 2MB) 
+        FILE *fp=fopen("/local/KAEMS.csv","a");
+        fprintf(fp,"%d,%0.3f\n",time,m);
+        fclose(fp);
+        lcd.cls();
+        lcd.printf("File updated");
+        wait(5);
+        
+        //Display
+        lcd.cls();
+        lcd.locate(0,0);
+        lcd.printf("SM1=%0.3f",m);  
+        wait(5);
+  
+        //Realy control
+        if(m>50)
+        relay=0;
+        else
+        relay=1;
+        wait(2); 
+        lcd.cls();
+        lcd.locate(0,0);
+        lcd.printf("Relay Function...");
+                   
+        //GPRS commands
+        lcd.cls();
+        lcd.locate(0,0);
+        lcd.printf("Updating BMSEMS...");
+        wait(3);
+        GPRS.printf("AT+SAPBR=0,1\r\n");
+        wait(3);
+        GPRS.printf("AT+SAPBR=3,1,%cCONTYPE%c,%cGPRS%c\r\n",e,e,e,e);
+        wait(3);
+        GPRS.printf("AT+SAPBR=3,1,%cAPN%c,%cwww%c\r\n",e,e,e,e);
+        wait(3);
+        GPRS.printf("AT+SAPBR=1,1\r\n");
+        wait(10);
+        GPRS.printf("AT+HTTPINIT\r\n");
+        wait(2);
+        GPRS.printf("AT+HTTPPARA=%cCID%c,1\r\n",e,e);
+        wait(2);
+        GPRS.printf("AT+HTTPPARA=%cURL%c,%chttp://bmsems.org/update.php?u=3&t=23&h=34&s1=%f&s2=24&s3=25&s4=26&ph=5&b=%d%c\r\n",e,e,e,m,b--,e);
+        wait(2);
+        GPRS.printf("AT+HTTPDATA=1000,5000\r\n"); 
+        wait(10);
+        GPRS.printf("AT+HTTPACTION=1\r\n"); 
+        wait(5);
+        GPRS.printf("AT+HTTPTERM\r\n");
+        wait(5);
+        
+        time=time+1;
+        lcd.cls();
+        lcd.locate(0,0);
+        lcd.printf("BMSEMS Updated");
+        wait(10);
+    }
+}
